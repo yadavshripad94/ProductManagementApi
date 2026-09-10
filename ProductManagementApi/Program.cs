@@ -2,47 +2,59 @@ using Microsoft.EntityFrameworkCore;
 using ProductManagementApi.Data;
 using ProductManagementApi.Repositories;
 using ProductManagementApi.Services;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Clear default logging providers
-builder.Logging.ClearProviders();
+// Create and configure the Serilog logger by reading settings
+// from appsettings.json, appsettings.Development.json, or
+// appsettings.Production.json based on the current environment.
+// This allows us to manage log levels, file sinks, and other logging behavior
+// from configuration instead of hardcoding everything here.
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(builder.Configuration)
+    .Enrich.FromLogContext()
+    .CreateLogger();
 
-// Add Console logging provider
-builder.Logging.AddConsole();
+// Tell ASP.NET Core to use Serilog as the main logging provider
+// instead of the default built-in logging providers.
+builder.Host.UseSerilog();
 
-// Add Debug logging provider
-builder.Logging.AddDebug();
-
-// Add controller support to the dependency injection container
+// Add controller support and keep JSON property names exactly
+// the same as the C# property names in our DTOs and models.
 builder.Services.AddControllers()
-.AddJsonOptions(options =>
-{
-    // Disable camelCase so JSON property names remain the same as C# property names
-    options.JsonSerializerOptions.PropertyNamingPolicy = null;
-});
+ .AddJsonOptions(options =>
+ {
+     options.JsonSerializerOptions.PropertyNamingPolicy = null;
+ });
 
+// Add Swagger services so API endpoints can be tested easily
+// during development.
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Register ApplicationDbContext and configure it to use SQL Server
+// Register ApplicationDbContext and configure EF Core to use SQL Server.
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Register repository and service classes for dependency injection
+// Register repository and service classes in the dependency injection container.
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<IProductService, ProductService>();
 
 var app = builder.Build();
 
-// Enable Swagger middleware for all environment
-app.UseSwagger();
-app.UseSwaggerUI();
-//if (app.Environment.IsDevelopment())
-//{
-//    app.UseSwagger();
-//    app.UseSwaggerUI();
-//}
+// Enable Swagger UI only in Development environment.
+// This is useful for local testing but usually avoided in production.
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+// Logs details about every HTTP request such as:
+// request path, method, status code, and execution time.
+// This helps a lot when troubleshooting production issues.
+app.UseSerilogRequestLogging();
 
 // Redirect all HTTP requests to HTTPS
 app.UseHttpsRedirection();
